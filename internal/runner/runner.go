@@ -1,54 +1,39 @@
 package runner
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"fmt"
 	"log"
+	"os"
+
+	"text/template"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/mtstnt/vrun/internal/core"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type SourceFileMap map[string][]byte
-
-type Config struct {
-	ImageName      string
-	CompileCommand string
-	RunCommand     string
-}
-
-type Task struct {
-	Config     Config
-	FileSystem SourceFileMap
-	TestCases  []string
-}
-
-type Result struct {
-	CorrectTestcases int
-}
-
+// Run accepts a pre-filled Task object containing info needed to run the code and setup the environment.
+// Will typically reside in worker.
+// Still not done: cache running container for a session or user. Will be specified later on.
 func Run(ctx context.Context, task Task) (Result, error) {
 	c, err := core.GetDockerClient()
 	if err != nil {
 		return Result{}, err
 	}
 
-	imageSummary, err := findImageByTagName(c, ctx, task.Config.ImageName)
-	if err != nil {
-		return Result{}, err
-	}
+	var imageSummary *types.ImageSummary = nil
+	// imageSummary, err := findImageByTagName(c, ctx, task.Config.Dockerfile)
+	// if err != nil {
+	// 	return Result{}, err
+	// }
 
 	var imageID string
 	if imageSummary == nil {
-		imageID, err = buildImageFromString(c, ctx, `
-FROM python:3.12.0-slim
-CMD ["sleep", "infinity"]
-`) // TODO: Diisi dockerfile beneran.
+		imageID, err = buildImageFromString(c, ctx, task.Config.Dockerfile)
 		if err != nil {
 			return Result{}, err
 		}
@@ -75,20 +60,56 @@ CMD ["sleep", "infinity"]
 			},
 			Privileged: false,
 		},
-		&network.NetworkingConfig{},
-		&v1.Platform{},
+		nil, nil,
 		"runner",
 	)
 	if err != nil {
 		return Result{}, err
 	}
 
-	fstar, err := writeMapToTar(task.FileSystem)
+	// Writing to tar.
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content, err := os.ReadFile("./builtin/timer.sh")
 	if err != nil {
 		return Result{}, err
 	}
+	tmpl, err := template.New("").Parse(string(content))
+	if err != nil {
+		return Result{}, err
+	}
+	var resultBuf bytes.Buffer
+	if err := tmpl.Execute(&resultBuf, task); err != nil {
+		return Result{}, err
+	}
+	task.FileSystem["timer.sh"] = resultBuf.Bytes()
+	if err := writeMapToTar(tw, task.FileSystem); err != nil {
+		return Result{}, err
+	}
+	tw.Close()
+	// end writing to tar.
+	if err := c.CopyToContainer(ctx, ccr.ID, "/code", &buf, types.CopyToContainerOptions{
+		AllowOverwriteDirWithFile: true,
+	}); err != nil {
+		if err := disposeContainer(c, ctx, ccr.ID); err != nil {
+			log.Println("Dispose err: " + err.Error())
+		}
+		return Result{}, err
+	}
 
-	if err := c.CopyToContainer(ctx, ccr.ID, "/code", fstar, types.CopyToContainerOptions{
+	// Writing testcases to tar.
+	testCases := FileMap{}
+	for i, testCase := range task.TestCases {
+		testCases[fmt.Sprintf("tests/%d.txt", i)] = []byte(testCase.Input)
+	}
+	var buf1 bytes.Buffer
+	tw1 := tar.NewWriter(&buf1)
+	if err := writeMapToTar(tw1, testCases); err != nil {
+		return Result{}, err
+	}
+	tw1.Close()
+
+	if err := c.CopyToContainer(ctx, ccr.ID, "/", &buf1, types.CopyToContainerOptions{
 		AllowOverwriteDirWithFile: true,
 	}); err != nil {
 		if err := disposeContainer(c, ctx, ccr.ID); err != nil {

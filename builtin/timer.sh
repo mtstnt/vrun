@@ -1,13 +1,17 @@
 # !/bin/sh
 
-compileCmd="{{ .CompileCommand }}"
-runCmd="{{ .RunCommand }}"
+compileCmd="{{ .Config.CompileCommand }}"
+runCmd="{{ .Config.RunCommand }}"
 
-# time (
-timeout 1s sh <<EOF
-    echo "==== Program Output ===="
-    echo "2" | $runCmd
+for testcase in ../tests/*.txt; do
+    tcContent="$(cat $testcase)"
+    timeout 1s sh <<EOF
+        echo "==== Program Output ===="
+        echo "TestCase No: $testcase"
+        echo "TestCase Content: $tcContent"
+        echo "====================="
+        echo "$tcContent" | $runCmd
 EOF
-# )
+done
 
-echo "==== Code: $?"
+echo "==== Status Code: $?"

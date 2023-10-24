@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
@@ -14,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Internal helpers
+// Find an image by name (filters by 'reference')
 func findImageByTagName(c *client.Client, ctx context.Context, imageName string) (*types.ImageSummary, error) {
 	resultsList, err := c.ImageList(
 		ctx,
@@ -39,6 +38,7 @@ func findImageByTagName(c *client.Client, ctx context.Context, imageName string)
 	return &resultsList[0], nil
 }
 
+// Builds an image from a Dockerfile, provided as a string.
 func buildImageFromString(c *client.Client, ctx context.Context, dockerFile string) (string, error) {
 	var (
 		uuidGen   = uuid.New()
@@ -58,6 +58,7 @@ func buildImageFromString(c *client.Client, ctx context.Context, dockerFile stri
 		Tags:       []string{imageName + ":latest"},
 		Dockerfile: "Dockerfile",
 		Context:    reader,
+		Remove:     true,
 	})
 	if err != nil {
 		return "", err
@@ -86,6 +87,7 @@ func buildImageFromString(c *client.Client, ctx context.Context, dockerFile stri
 	return image[0].ID, nil
 }
 
+// Add a file, specified as relative path and content, to an existing *tar.Writer
 func addFileToTar(tw *tar.Writer, filePath string, fileContent []byte) error {
 	if err := tw.WriteHeader(&tar.Header{
 		Name: filePath,
@@ -101,26 +103,13 @@ func addFileToTar(tw *tar.Writer, filePath string, fileContent []byte) error {
 }
 
 // Converts a map of [filepath]: [file contents] into a tar. Returning the io.Reader of it.
-func writeMapToTar(sourceFileMap map[string][]byte) (io.Reader, error) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-
-	content, err := os.ReadFile("./builtin/timer.sh")
-	if err != nil {
-		return nil, err
-	}
-
-	if err := addFileToTar(tw, "timer.sh", content); err != nil {
-		return nil, err
-	}
-
+func writeMapToTar(tw *tar.Writer, sourceFileMap FileMap) error {
 	for filePath, fileContent := range sourceFileMap {
 		if err := addFileToTar(tw, filePath, fileContent); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	tw.Close()
-	return &buf, nil
+	return nil
 }
 
 func disposeContainer(c *client.Client, ctx context.Context, containerID string) error {

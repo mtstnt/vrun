@@ -10,21 +10,32 @@ import (
 func main() {
 	task := runner.Task{
 		Config: runner.Config{
-			ImageName:      "python:3.11.1-debian",
+			Dockerfile: `FROM python:3.12.0-slim
+CMD ["sleep", "infinity"]
+`,
 			CompileCommand: "",
-			RunCommand:     "python main.py",
+			RunCommand:     "python3 main.py",
 		},
-		FileSystem: runner.SourceFileMap{
+		FileSystem: runner.FileMap{
 			"main.py": []byte(`
 import hello
-hello.hello()
+a = int(input())
+b = int(input())
+print(hello.add(a, b))
 			`),
 			"hello/__init__.py": []byte(`
-def hello(): print("hello world")
+def add(a, b): return a + b
 		`),
 		},
-		TestCases: []string{
-			"hello world",
+		TestCases: []runner.TestCase{
+			{
+				Input:  "1\n2",
+				Output: "3",
+			},
+			{
+				Input:  "3\n99",
+				Output: "102",
+			},
 		},
 	}
 
