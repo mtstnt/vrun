@@ -12,26 +12,25 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/mtstnt/vrun/internal/core"
 )
 
 // Run accepts a pre-filled Task object containing info needed to run the code and setup the environment.
 // Will typically reside in worker.
-// Still not done: cache running container for a session or user. Will be specified later on.
-func Run(ctx context.Context, task Task) (Result, error) {
-	c, err := core.GetDockerClient()
-	if err != nil {
-		return Result{}, err
-	}
-
-	var imageSummary *types.ImageSummary = nil
+// TODO: Still not done. Cache running container for a session or user. Will be specified later on.
+// TODO: Associate a task with an ID to prevent container name collision.
+func Run(c *client.Client, ctx context.Context, task Task) (Result, error) {
 	// imageSummary, err := findImageByTagName(c, ctx, task.Config.Dockerfile)
 	// if err != nil {
 	// 	return Result{}, err
 	// }
+	var (
+		imageSummary *types.ImageSummary
+		err          error
+		imageID      string
+	)
 
-	var imageID string
 	if imageSummary == nil {
 		imageID, err = buildImageFromString(c, ctx, task.Config.Dockerfile)
 		if err != nil {
@@ -40,9 +39,6 @@ func Run(ctx context.Context, task Task) (Result, error) {
 	} else {
 		imageID = imageSummary.ID
 	}
-
-	// 10MB memory limit
-	memoryLimit := 10_000_000
 
 	ccr, err := c.ContainerCreate(ctx,
 		&container.Config{
@@ -55,7 +51,7 @@ func Run(ctx context.Context, task Task) (Result, error) {
 		},
 		&container.HostConfig{
 			Resources: container.Resources{
-				Memory:  int64(memoryLimit),
+				Memory:  int64(task.Config.MemoryLimit),
 				Devices: nil,
 			},
 			Privileged: false,

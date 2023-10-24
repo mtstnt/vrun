@@ -12,6 +12,8 @@ const (
 	FloatingPointComparison
 )
 
+// TestCase stores the given input and expected output.
+// The OutputCheckStrategy is used to determine how a testcase should be checked.
 type TestCase struct {
 	Input               string
 	Output              string
@@ -23,6 +25,7 @@ type Config struct {
 	Dockerfile     string
 	CompileCommand string
 	RunCommand     string
+	MemoryLimit    int
 }
 
 // Task is the main unit that is being constructed and sent for execution.

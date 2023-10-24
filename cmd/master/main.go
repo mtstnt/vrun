@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/mtstnt/vrun/internal/core"
 	"github.com/mtstnt/vrun/internal/runner"
 )
 
@@ -41,7 +42,14 @@ def add(a, b): return a + b
 
 	ctx := context.Background()
 
-	result, err := runner.Run(ctx, task)
+	// TODO: Mock this part for easier testing.
+	// Create interface just to do stuff with Docker Client.
+	client, err := core.GetDockerClient()
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := runner.Run(client, ctx, task)
 	if err != nil {
 		panic(err)
 	}
